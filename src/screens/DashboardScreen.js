@@ -3,8 +3,8 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Dimensions,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { LineChart } from 'react-native-gifted-charts';
+import { useFocusEffect, TabActions } from '@react-navigation/native';
+import { BarChart } from 'react-native-gifted-charts';
 import { Ionicons } from '@expo/vector-icons';
 import { getAllTransactions } from '../database/db';
 import { useTheme } from '../context/ThemeContext';
@@ -21,30 +21,52 @@ const formatDate = (str) => {
   return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' });
 };
 
-const buildDailyTrend = (transactions) => {
+const BAR_COLOR         = '#7c3aed';
+const BAR_COLOR_FADED   = '#ddd6fe';
+const BAR_COLOR_SELECTED= '#6200ee';
+
+const buildDailyTrend = (transactions, selectedIdx) => {
   const data = [];
-  for (let i = 13; i >= 0; i--) {
+  for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const key   = d.toISOString().substring(0, 10);
-    const label = i % 2 === 0 ? d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' }) : '';
-    const dayTx = transactions.filter(t => (t.date || '').substring(0, 10) === key);
-    data.push({ value: dayTx.reduce((s, t) => s + (t.expenses || 0), 0), label, labelTextStyle: { width: 54, fontSize: 9 } });
+    const key    = d.toISOString().substring(0, 10);
+    const label  = d.toLocaleDateString('en-AU', { weekday: 'short' }); // Mon Tue Wed…
+    const dayTx  = transactions.filter(t => (t.date || '').substring(0, 10) === key);
+    const value  = dayTx.reduce((s, t) => s + (t.expenses || 0), 0);
+    const idx    = 6 - i;
+    data.push({
+      value,
+      label,
+      frontColor:  selectedIdx === idx ? BAR_COLOR_SELECTED : (value > 0 ? BAR_COLOR : BAR_COLOR_FADED),
+      topLabelComponent: selectedIdx === idx
+        ? () => <Text style={{ fontSize: 9, color: BAR_COLOR_SELECTED, fontWeight: '700', marginBottom: 2 }}>${value.toFixed(0)}</Text>
+        : undefined,
+    });
   }
   return data;
 };
 
-const buildWeeklyTrend = (transactions) => {
+const buildWeeklyTrend = (transactions, selectedIdx) => {
   const data = [];
   for (let i = 7; i >= 0; i--) {
     const end   = new Date(); end.setDate(end.getDate() - i * 7);
     const start = new Date(end); start.setDate(start.getDate() - 6);
-    const label = start.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' });
+    const label = start.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }); // 1 May
     const weekTx = transactions.filter(t => {
       const d = new Date((t.date || '') + 'T00:00:00');
       return d >= start && d <= end;
     });
-    data.push({ value: weekTx.reduce((s, t) => s + (t.expenses || 0), 0), label, labelTextStyle: { width: 54, fontSize: 9 } });
+    const value = weekTx.reduce((s, t) => s + (t.expenses || 0), 0);
+    const idx   = 7 - i;
+    data.push({
+      value,
+      label,
+      frontColor: selectedIdx === idx ? BAR_COLOR_SELECTED : (value > 0 ? BAR_COLOR : BAR_COLOR_FADED),
+      topLabelComponent: selectedIdx === idx
+        ? () => <Text style={{ fontSize: 9, color: BAR_COLOR_SELECTED, fontWeight: '700', marginBottom: 2 }}>${value.toFixed(0)}</Text>
+        : undefined,
+    });
   }
   return data;
 };
@@ -55,9 +77,9 @@ export default function DashboardScreen({ navigation }) {
   const { theme } = useTheme();
 
   const [transactions, setTransactions] = useState([]);
-  const [trendPeriod, setTrendPeriod]   = useState('Weekly');
-  const [hidden, setHidden]             = useState(false);
-  const [selectedPoint, setSelectedPoint] = useState(null);
+  const [trendPeriod, setTrendPeriod]     = useState('Daily');
+  const [hidden, setHidden]               = useState(false);
+  const [selectedBar, setSelectedBar]     = useState(null);
 
   useFocusEffect(useCallback(() => {
     getAllTransactions().then(setTransactions);
@@ -80,10 +102,10 @@ export default function DashboardScreen({ navigation }) {
 
   // Trend data
   const trendData = trendPeriod === 'Daily'
-    ? buildDailyTrend(transactions)
-    : buildWeeklyTrend(transactions);
+    ? buildDailyTrend(transactions, selectedBar)
+    : buildWeeklyTrend(transactions, selectedBar);
 
-  const maxTrend = Math.max(...trendData.map(d => d.value), 1);
+  const maxTrend = Math.max(...trendData.map(d => d.value), 10);
 
   return (
     <ScrollView
@@ -152,7 +174,7 @@ export default function DashboardScreen({ navigation }) {
                 <TouchableOpacity
                   key={p}
                   style={[s.toggleBtn, trendPeriod === p && s.toggleBtnActive]}
-                  onPress={() => { setTrendPeriod(p); setSelectedPoint(null); }}
+                  onPress={() => { setTrendPeriod(p); setSelectedBar(null); }}
                   activeOpacity={0.7}
                 >
                   <Text style={[s.toggleText, { color: theme.subtext }, trendPeriod === p && s.toggleTextActive]}>{p}</Text>
@@ -161,46 +183,44 @@ export default function DashboardScreen({ navigation }) {
             </View>
           </View>
 
-          {selectedPoint !== null && (
+          {/* Selected bar summary */}
+          {selectedBar !== null && trendData[selectedBar] ? (
             <View style={[s.tooltipBanner, { backgroundColor: theme.background }]}>
               <Text style={[s.tooltipText, { color: theme.text }]}>
-                {trendData[selectedPoint]?.label || ''} — <Text style={{ color: '#ef5350', fontWeight: '700' }}>${trendData[selectedPoint]?.value?.toFixed(2) || '0.00'}</Text>
+                {trendData[selectedBar].label}{'  '}
+                <Text style={{ color: BAR_COLOR_SELECTED, fontWeight: '800' }}>
+                  ${trendData[selectedBar].value.toFixed(2)}
+                </Text>
               </Text>
             </View>
+          ) : (
+            <Text style={[s.tooltipHint, { color: theme.muted }]}>Tap a bar to see details</Text>
           )}
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <LineChart
-              data={trendData}
-              height={160}
-              width={Math.max(W - 80, trendData.length * 52)}
-              color="#ef5350"
-              thickness={2.5}
-              curved
-              areaChart
-              startFillColor="#ef535044"
-              endFillColor="transparent"
-              dataPointsColor="#ef5350"
-              dataPointsRadius={4}
-              xAxisColor={theme.border}
-              yAxisColor={theme.border}
-              yAxisTextStyle={{ color: theme.subtext, fontSize: 10 }}
-              xAxisLabelTextStyle={{ color: theme.subtext, fontSize: 9 }}
-              noOfSections={4}
-              maxValue={maxTrend * 1.3}
-              hideRules={false}
-              rulesColor={theme.border}
-              rulesType="dashed"
-              backgroundColor={theme.card}
-              onPress={(item, index) => setSelectedPoint(index)}
-              pressEnabled
-              showStripOnPress
-              stripColor="#ef535066"
-              stripWidth={2}
-              focusedDataPointRadius={6}
-              focusedDataPointColor="#ef5350"
-            />
-          </ScrollView>
+          <BarChart
+            data={trendData}
+            barWidth={trendPeriod === 'Daily' ? 32 : 24}
+            spacing={trendPeriod === 'Daily' ? 12 : 10}
+            roundedTop
+            barBorderRadius={6}
+            noOfSections={4}
+            maxValue={maxTrend * 1.25}
+            height={160}
+            width={W - 64}
+            xAxisColor={theme.border}
+            yAxisColor="transparent"
+            yAxisTextStyle={{ color: theme.subtext, fontSize: 10 }}
+            xAxisLabelTextStyle={{ color: theme.subtext, fontSize: 10, marginTop: 4 }}
+            hideRules={false}
+            rulesColor={theme.border}
+            rulesType="dashed"
+            backgroundColor={theme.card}
+            disableScroll={trendPeriod === 'Daily'}
+            onPress={(item, index) => setSelectedBar(prev => prev === index ? null : index)}
+            showGradient
+            gradientColor={BAR_COLOR_FADED}
+            isAnimated
+          />
         </View>
 
         {/* ── Expense Categories ────────────────────────────────────────────── */}
@@ -222,7 +242,7 @@ export default function DashboardScreen({ navigation }) {
         {/* ── Latest Transactions ───────────────────────────────────────────── */}
         <View style={s.txHeader}>
           <Text style={[s.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Latest Transactions</Text>
-          <TouchableOpacity onPress={() => navigation.jumpTo('Transactions')}>
+          <TouchableOpacity onPress={() => navigation.dispatch(TabActions.jumpTo('Transactions'))}>
             <Text style={s.seeAll}>See All</Text>
           </TouchableOpacity>
         </View>
@@ -297,6 +317,7 @@ const s = StyleSheet.create({
   // Tooltip
   tooltipBanner: { borderRadius: 10, padding: 8, marginBottom: 10, alignItems: 'center' },
   tooltipText:   { fontSize: 13, fontWeight: '600' },
+  tooltipHint:   { fontSize: 12, textAlign: 'center', marginBottom: 10 },
 
   // Section titles
   sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 12 },

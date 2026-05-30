@@ -4,7 +4,7 @@ import {
   Alert, ScrollView, KeyboardAvoidingView, Platform, StyleSheet,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute, useNavigation, TabActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { addTransaction, updateTransaction } from '../database/db';
 import { useTheme } from '../context/ThemeContext';
@@ -76,7 +76,9 @@ export default function AddEditScreen() {
         Alert.alert('Added!', 'Transaction has been saved.');
       }
       resetForm();
-      navigation.navigate('Transactions');
+      // AddEdit is a Stack modal — go back to dismiss it, then jump to Transactions tab
+      navigation.goBack();
+      navigation.getParent()?.dispatch(TabActions.jumpTo('Transactions'));
     } catch {
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
