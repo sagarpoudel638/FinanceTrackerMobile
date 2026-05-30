@@ -7,6 +7,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { addTransaction, updateTransaction } from '../database/db';
+import { useTheme } from '../context/ThemeContext';
+import { CATEGORIES } from '../utils/categories';
 
 const toDateString = (date) => date.toISOString().substring(0, 10); // 'YYYY-MM-DD'
 const formatDisplay = (str) => {
@@ -19,22 +21,26 @@ export default function AddEditScreen() {
   const route      = useRoute();
   const navigation = useNavigation();
 
-  const editing   = route.params?.transaction;
-  const isEditing = !!editing;
+  const { theme } = useTheme();
+  const editing     = route.params?.transaction;
+  const defaultType = route.params?.defaultType || 'income';
+  const isEditing   = !!editing;
 
-  const [title, setTitle]         = useState('');
-  const [type, setType]           = useState('income');
-  const [amount, setAmount]       = useState('');
-  const [date, setDate]           = useState(toDateString(new Date()));
-  const [remarks, setRemarks]     = useState('');
-  const [showPicker, setShowPicker] = useState(false);
-  const [loading, setLoading]     = useState(false);
+  const [title, setTitle]             = useState('');
+  const [type, setType]               = useState(defaultType);
+  const [amount, setAmount]           = useState('');
+  const [date, setDate]               = useState(toDateString(new Date()));
+  const [remarks, setRemarks]         = useState('');
+  const [category, setCategory]       = useState('other');
+  const [showPicker, setShowPicker]   = useState(false);
+  const [loading, setLoading]         = useState(false);
 
   useEffect(() => {
     if (editing) {
       setTitle(editing.title);
       setRemarks(editing.remarks || '');
       setDate(editing.date || toDateString(new Date()));
+      setCategory(editing.category || 'other');
       if ((editing.income || 0) > 0) {
         setType('income');
         setAmount(String(editing.income));
@@ -42,12 +48,14 @@ export default function AddEditScreen() {
         setType('expenses');
         setAmount(String(editing.expenses));
       }
+    } else {
+      setType(defaultType);
     }
-  }, [editing]);
+  }, [editing, defaultType]);
 
   const resetForm = () => {
-    setTitle(''); setType('income'); setAmount('');
-    setDate(toDateString(new Date())); setRemarks('');
+    setTitle(''); setType(defaultType); setAmount('');
+    setDate(toDateString(new Date())); setRemarks(''); setCategory('other');
     navigation.setParams({ transaction: null });
   };
 
@@ -61,10 +69,10 @@ export default function AddEditScreen() {
     setLoading(true);
     try {
       if (isEditing) {
-        await updateTransaction(editing.id, title.trim(), income, expenses, date, remarks.trim());
+        await updateTransaction(editing.id, title.trim(), income, expenses, date, remarks.trim(), category);
         Alert.alert('Updated!', 'Transaction has been updated.');
       } else {
-        await addTransaction(title.trim(), income, expenses, date, remarks.trim());
+        await addTransaction(title.trim(), income, expenses, date, remarks.trim(), category);
         Alert.alert('Added!', 'Transaction has been saved.');
       }
       resetForm();
@@ -77,7 +85,7 @@ export default function AddEditScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={s.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView style={[s.screen, { backgroundColor: theme.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={{ padding: 24 }} showsVerticalScrollIndicator={false}>
 
         {/* Mode badge */}
@@ -89,21 +97,21 @@ export default function AddEditScreen() {
         </View>
 
         {/* Title */}
-        <Text style={s.label}>TITLE *</Text>
-        <View style={s.inputRow}>
-          <Ionicons name="text-outline" size={17} color="#ccc" style={{ marginRight: 10 }} />
+        <Text style={[s.label, { color: theme.subtext }]}>TITLE *</Text>
+        <View style={[s.inputRow, { backgroundColor: theme.input, borderColor: theme.border }]}>
+          <Ionicons name="text-outline" size={17} color={theme.placeholder} style={{ marginRight: 10 }} />
           <TextInput
-            style={s.input}
+            style={[s.input, { color: theme.text }]}
             value={title}
             onChangeText={setTitle}
             placeholder="e.g. Salary, Groceries, Rent"
-            placeholderTextColor="#ccc"
+            placeholderTextColor={theme.placeholder}
             maxLength={100}
           />
         </View>
 
         {/* Type toggle */}
-        <Text style={s.label}>TYPE *</Text>
+        <Text style={[s.label, { color: theme.subtext }]}>TYPE *</Text>
         <View style={s.typeRow}>
           <TouchableOpacity
             style={[s.typeBtn, type === 'income' && s.typeBtnActiveIncome]}
@@ -122,31 +130,31 @@ export default function AddEditScreen() {
         </View>
 
         {/* Amount */}
-        <Text style={s.label}>AMOUNT (A$) *</Text>
-        <View style={s.inputRow}>
+        <Text style={[s.label, { color: theme.subtext }]}>AMOUNT (A$) *</Text>
+        <View style={[s.inputRow, { backgroundColor: theme.input, borderColor: theme.border }]}>
           <Ionicons
             name={type === 'income' ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline'}
             size={17} color={type === 'income' ? '#4caf50' : '#ef5350'}
             style={{ marginRight: 10 }}
           />
           <TextInput
-            style={s.input}
+            style={[s.input, { color: theme.text }]}
             value={amount}
             onChangeText={setAmount}
             placeholder="0.00"
-            placeholderTextColor="#ccc"
+            placeholderTextColor={theme.placeholder}
             keyboardType="decimal-pad"
           />
         </View>
 
         {/* Date picker */}
-        <Text style={s.label}>DATE *</Text>
-        <TouchableOpacity style={s.inputRow} onPress={() => setShowPicker(true)} activeOpacity={0.7}>
+        <Text style={[s.label, { color: theme.subtext }]}>DATE *</Text>
+        <TouchableOpacity style={[s.inputRow, { backgroundColor: theme.input, borderColor: theme.border }]} onPress={() => setShowPicker(true)} activeOpacity={0.7}>
           <Ionicons name="calendar-outline" size={17} color="#6200ee" style={{ marginRight: 10 }} />
-          <Text style={[s.input, { paddingTop: 16, paddingBottom: 16, color: '#222' }]}>
+          <Text style={[s.input, { paddingTop: 16, paddingBottom: 16, color: theme.text }]}>
             {formatDisplay(date)}
           </Text>
-          <Ionicons name="chevron-down" size={16} color="#ccc" />
+          <Ionicons name="chevron-down" size={16} color={theme.placeholder} />
         </TouchableOpacity>
 
         {showPicker && (
@@ -164,20 +172,46 @@ export default function AddEditScreen() {
         )}
 
         {/* Remarks (optional) */}
-        <Text style={s.label}>REMARKS <Text style={s.optional}>(optional)</Text></Text>
-        <View style={[s.inputRow, { alignItems: 'flex-start', paddingTop: 12 }]}>
-          <Ionicons name="chatbubble-outline" size={17} color="#ccc" style={{ marginRight: 10, marginTop: 2 }} />
+        <Text style={[s.label, { color: theme.subtext }]}>REMARKS <Text style={s.optional}>(optional)</Text></Text>
+        <View style={[s.inputRow, { alignItems: 'flex-start', paddingTop: 12, backgroundColor: theme.input, borderColor: theme.border }]}>
+          <Ionicons name="chatbubble-outline" size={17} color={theme.placeholder} style={{ marginRight: 10, marginTop: 2 }} />
           <TextInput
-            style={[s.input, { minHeight: 72, textAlignVertical: 'top' }]}
+            style={[s.input, { minHeight: 72, textAlignVertical: 'top', color: theme.text }]}
             value={remarks}
             onChangeText={setRemarks}
             placeholder="Add a note… e.g. Monthly Netflix subscription"
-            placeholderTextColor="#ccc"
+            placeholderTextColor={theme.placeholder}
             multiline
             maxLength={300}
           />
         </View>
-        <Text style={s.charCount}>{remarks.length}/300</Text>
+        <Text style={[s.charCount, { color: theme.muted }]}>{remarks.length}/300</Text>
+
+        {/* Category — only shown for expenses */}
+        {type === 'expenses' && (
+          <>
+            <Text style={[s.label, { color: theme.subtext }]}>CATEGORY</Text>
+            <View style={s.catGrid}>
+              {CATEGORIES.map(cat => (
+                <TouchableOpacity
+                  key={cat.key}
+                  style={[
+                    s.catChip,
+                    { backgroundColor: theme.input, borderColor: theme.border },
+                    category === cat.key && { backgroundColor: cat.color, borderColor: cat.color },
+                  ]}
+                  onPress={() => setCategory(cat.key)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name={cat.icon} size={14} color={category === cat.key ? '#fff' : cat.color} />
+                  <Text style={[s.catChipText, { color: category === cat.key ? '#fff' : theme.text }]}>
+                    {' '}{cat.shortLabel}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
 
         {/* Submit */}
         <TouchableOpacity
@@ -239,6 +273,9 @@ const s = StyleSheet.create({
     shadowOpacity: 0.35, shadowRadius: 10, elevation: 6, marginTop: 8,
   },
   submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  catGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  catChip:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5 },
+  catChipText: { fontSize: 12, fontWeight: '600' },
   cancelBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     borderRadius: 16, padding: 14, marginTop: 10,

@@ -1,316 +1,335 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  ActivityIndicator, Modal, Dimensions, StyleSheet,
+  StyleSheet, Dimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { LineChart, PieChart } from 'react-native-chart-kit';
+import { LineChart } from 'react-native-gifted-charts';
 import { Ionicons } from '@expo/vector-icons';
 import { getAllTransactions } from '../database/db';
-import { getSuggestions, getRemainingAIRequests } from '../utils/gemini';
+import { useTheme } from '../context/ThemeContext';
+import { CATEGORIES, getCategoryByKey } from '../utils/categories';
 
 const W = Dimensions.get('window').width;
+const TREND_PERIODS = ['Daily', 'Weekly'];
 
-const CHART_CONFIG = {
-  backgroundColor: '#fff',
-  backgroundGradientFrom: '#fff',
-  backgroundGradientTo: '#fff',
-  decimalPlaces: 0,
-  color: (opacity = 1) => `rgba(98, 0, 238, ${opacity})`,
-  labelColor: () => '#888',
-  propsForDots: { r: '4', strokeWidth: '2' },
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const formatDate = (str) => {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00:00');
+  return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' });
 };
 
-const PERIODS = ['Weekly', 'Monthly', 'Yearly'];
-
-// ─── Chart data builders ──────────────────────────────────────────────────────
-
-const buildWeekly = (transactions) => {
-  const labels = [], incomeData = [], expenseData = [];
-  for (let i = 6; i >= 0; i--) {
+const buildDailyTrend = (transactions) => {
+  const data = [];
+  for (let i = 13; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const key = d.toISOString().substring(0, 10);
-    const label = d.toLocaleDateString('en-AU', { weekday: 'short' });
+    const key   = d.toISOString().substring(0, 10);
+    const label = i % 2 === 0 ? d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' }) : '';
     const dayTx = transactions.filter(t => (t.date || '').substring(0, 10) === key);
-    labels.push(label);
-    incomeData.push(dayTx.reduce((s, t) => s + (t.income || 0), 0));
-    expenseData.push(dayTx.reduce((s, t) => s + (t.expenses || 0), 0));
+    data.push({ value: dayTx.reduce((s, t) => s + (t.expenses || 0), 0), label, labelTextStyle: { width: 54, fontSize: 9 } });
   }
-  return { labels, incomeData, expenseData };
+  return data;
 };
 
-const buildMonthly = (transactions) => {
-  const labels = [], incomeData = [], expenseData = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i);
-    const key   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = d.toLocaleString('default', { month: 'short' });
-    const mTx   = transactions.filter(t => (t.date || '').substring(0, 7) === key);
-    labels.push(label);
-    incomeData.push(mTx.reduce((s, t) => s + (t.income || 0), 0));
-    expenseData.push(mTx.reduce((s, t) => s + (t.expenses || 0), 0));
+const buildWeeklyTrend = (transactions) => {
+  const data = [];
+  for (let i = 7; i >= 0; i--) {
+    const end   = new Date(); end.setDate(end.getDate() - i * 7);
+    const start = new Date(end); start.setDate(start.getDate() - 6);
+    const label = start.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' });
+    const weekTx = transactions.filter(t => {
+      const d = new Date((t.date || '') + 'T00:00:00');
+      return d >= start && d <= end;
+    });
+    data.push({ value: weekTx.reduce((s, t) => s + (t.expenses || 0), 0), label, labelTextStyle: { width: 54, fontSize: 9 } });
   }
-  return { labels, incomeData, expenseData };
-};
-
-const buildYearly = (transactions) => {
-  const labels = [], incomeData = [], expenseData = [];
-  const currentYear = new Date().getFullYear();
-  for (let y = currentYear - 2; y <= currentYear; y++) {
-    const yTx = transactions.filter(t => (t.date || '').startsWith(String(y)));
-    labels.push(String(y));
-    incomeData.push(yTx.reduce((s, t) => s + (t.income || 0), 0));
-    expenseData.push(yTx.reduce((s, t) => s + (t.expenses || 0), 0));
-  }
-  return { labels, incomeData, expenseData };
+  return data;
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function DashboardScreen() {
+export default function DashboardScreen({ navigation }) {
+  const { theme } = useTheme();
+
   const [transactions, setTransactions] = useState([]);
-  const [suggestions, setSuggestions]   = useState('');
-  const [loadingAI, setLoadingAI]       = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [remainingAI, setRemainingAI]   = useState(null);
-  const [period, setPeriod]             = useState('Monthly');
+  const [trendPeriod, setTrendPeriod]   = useState('Weekly');
+  const [hidden, setHidden]             = useState(false);
+  const [selectedPoint, setSelectedPoint] = useState(null);
 
-  useFocusEffect(useCallback(() => { load(); }, []));
-
-  const load = async () => {
-    const data      = await getAllTransactions();
-    const remaining = await getRemainingAIRequests();
-    setTransactions(data);
-    setRemainingAI(remaining);
-  };
+  useFocusEffect(useCallback(() => {
+    getAllTransactions().then(setTransactions);
+  }, []));
 
   const totalIncome   = transactions.reduce((s, t) => s + (t.income   || 0), 0);
   const totalExpenses = transactions.reduce((s, t) => s + (t.expenses || 0), 0);
-  const net = totalIncome - totalExpenses;
+  const balance       = totalIncome - totalExpenses;
 
-  // Build chart data based on selected period
-  const { labels, incomeData, expenseData } = (() => {
-    if (period === 'Weekly')  return buildWeekly(transactions);
-    if (period === 'Yearly')  return buildYearly(transactions);
-    return buildMonthly(transactions);
-  })();
+  // Category spending
+  const categorySpend = CATEGORIES.map(cat => ({
+    ...cat,
+    spent: transactions
+      .filter(t => (t.category || 'other') === cat.key && (t.expenses || 0) > 0)
+      .reduce((s, t) => s + (t.expenses || 0), 0),
+  }));
 
-  const lineData = {
-    labels,
-    datasets: [
-      { data: incomeData,  color: (o = 1) => `rgba(76, 175, 80, ${o})`,  strokeWidth: 2 },
-      { data: expenseData, color: (o = 1) => `rgba(239, 83, 80, ${o})`,  strokeWidth: 2 },
-    ],
-    legend: ['Income', 'Expenses'],
-  };
+  // Latest 5 transactions
+  const latestTx = transactions.slice(0, 5);
 
-  const pieData = [
-    { name: 'Income',   amount: totalIncome   || 0.001, color: '#4caf50', legendFontColor: '#555', legendFontSize: 13 },
-    { name: 'Expenses', amount: totalExpenses || 0.001, color: '#ef5350', legendFontColor: '#555', legendFontSize: 13 },
-  ];
+  // Trend data
+  const trendData = trendPeriod === 'Daily'
+    ? buildDailyTrend(transactions)
+    : buildWeeklyTrend(transactions);
 
-  const handleAI = async () => {
-    setLoadingAI(true);
-    setModalVisible(true);
-    setSuggestions('');
-    const result = await getSuggestions(transactions);
-    setSuggestions(result);
-    setLoadingAI(false);
-    const remaining = await getRemainingAIRequests();
-    setRemainingAI(remaining);
-  };
+  const maxTrend = Math.max(...trendData.map(d => d.value), 1);
 
   return (
-    <ScrollView style={s.screen} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
-
-      {/* Summary cards */}
-      <View style={s.cardRow}>
-        <SummaryCard label="Income"   value={totalIncome}   color="#4caf50" />
-        <SummaryCard label="Expenses" value={totalExpenses} color="#ef5350" />
-        <SummaryCard label="Net"      value={net}           color={net >= 0 ? '#2196f3' : '#ff9800'} />
+    <ScrollView
+      style={[s.screen, { backgroundColor: theme.background }]}
+      contentContainerStyle={{ paddingBottom: 32 }}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* ── Your Balance ──────────────────────────────────────────────────── */}
+      <View style={[s.balanceCard, { backgroundColor: '#6200ee' }]}>
+        <View style={s.balanceTop}>
+          <Text style={s.balanceLabel}>Your Balance</Text>
+          <TouchableOpacity onPress={() => setHidden(h => !h)}>
+            <Ionicons name={hidden ? 'eye-off' : 'eye'} size={20} color="rgba(255,255,255,0.8)" />
+          </TouchableOpacity>
+        </View>
+        <Text style={s.balanceAmount}>
+          {hidden ? '••••••' : `${balance < 0 ? '-' : ''}$${Math.abs(balance).toFixed(2)}`}
+        </Text>
+        <View style={s.balanceRow}>
+          <View style={s.balanceSub}>
+            <Ionicons name="arrow-down-circle" size={14} color="#a5f3a5" />
+            <Text style={s.balanceSubLabel}>  Income  </Text>
+            <Text style={s.balanceSubValue}>{hidden ? '••••' : `$${totalIncome.toFixed(2)}`}</Text>
+          </View>
+          <View style={s.balanceDivider} />
+          <View style={s.balanceSub}>
+            <Ionicons name="arrow-up-circle" size={14} color="#fca5a5" />
+            <Text style={s.balanceSubLabel}>  Expenses  </Text>
+            <Text style={s.balanceSubValue}>{hidden ? '••••' : `$${totalExpenses.toFixed(2)}`}</Text>
+          </View>
+        </View>
       </View>
 
-      {transactions.length > 0 ? (
-        <>
-          {/* Pie chart */}
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Income vs Expenses — Overall</Text>
-            <PieChart
-              data={pieData}
-              width={W - 64}
-              height={180}
-              chartConfig={CHART_CONFIG}
-              accessor="amount"
-              backgroundColor="transparent"
-              paddingLeft="16"
-              absolute={false}
-            />
+      <View style={s.section}>
+        {/* ── Add buttons ───────────────────────────────────────────────────── */}
+        <View style={s.addRow}>
+          <TouchableOpacity
+            style={[s.addBtn, { backgroundColor: '#e8f5e9' }]}
+            onPress={() => navigation.navigate('AddEdit', { defaultType: 'income' })}
+            activeOpacity={0.8}
+          >
+            <View style={[s.addBtnIcon, { backgroundColor: '#4caf50' }]}>
+              <Ionicons name="arrow-down" size={18} color="#fff" />
+            </View>
+            <Text style={[s.addBtnText, { color: '#2e7d32' }]}>Add Income</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[s.addBtn, { backgroundColor: '#ffebee' }]}
+            onPress={() => navigation.navigate('AddEdit', { defaultType: 'expenses' })}
+            activeOpacity={0.8}
+          >
+            <View style={[s.addBtnIcon, { backgroundColor: '#ef5350' }]}>
+              <Ionicons name="arrow-up" size={18} color="#fff" />
+            </View>
+            <Text style={[s.addBtnText, { color: '#b71c1c' }]}>Add Expense</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Expense Trend ─────────────────────────────────────────────────── */}
+        <View style={[s.card, { backgroundColor: theme.card }]}>
+          <View style={s.cardHeader}>
+            <Text style={[s.cardTitle, { color: theme.text }]}>Expense Trend</Text>
+            <View style={[s.toggleGroup, { backgroundColor: theme.background }]}>
+              {TREND_PERIODS.map(p => (
+                <TouchableOpacity
+                  key={p}
+                  style={[s.toggleBtn, trendPeriod === p && s.toggleBtnActive]}
+                  onPress={() => { setTrendPeriod(p); setSelectedPoint(null); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.toggleText, { color: theme.subtext }, trendPeriod === p && s.toggleTextActive]}>{p}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
-          {/* Period line chart */}
-          <View style={s.card}>
-            {/* Period toggle */}
-            <View style={s.toggleRow}>
-              <Text style={s.cardTitle}>Trends</Text>
-              <View style={s.toggleGroup}>
-                {PERIODS.map(p => (
-                  <TouchableOpacity
-                    key={p}
-                    style={[s.toggleBtn, period === p && s.toggleBtnActive]}
-                    onPress={() => setPeriod(p)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[s.toggleText, period === p && s.toggleTextActive]}>{p}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+          {selectedPoint !== null && (
+            <View style={[s.tooltipBanner, { backgroundColor: theme.background }]}>
+              <Text style={[s.tooltipText, { color: theme.text }]}>
+                {trendData[selectedPoint]?.label || ''} — <Text style={{ color: '#ef5350', fontWeight: '700' }}>${trendData[selectedPoint]?.value?.toFixed(2) || '0.00'}</Text>
+              </Text>
             </View>
+          )}
 
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <LineChart
-              data={lineData}
-              width={W - 64}
-              height={200}
-              chartConfig={CHART_CONFIG}
-              bezier
-              style={{ borderRadius: 8 }}
-              fromZero
+              data={trendData}
+              height={160}
+              width={Math.max(W - 80, trendData.length * 52)}
+              color="#ef5350"
+              thickness={2.5}
+              curved
+              areaChart
+              startFillColor="#ef535044"
+              endFillColor="transparent"
+              dataPointsColor="#ef5350"
+              dataPointsRadius={4}
+              xAxisColor={theme.border}
+              yAxisColor={theme.border}
+              yAxisTextStyle={{ color: theme.subtext, fontSize: 10 }}
+              xAxisLabelTextStyle={{ color: theme.subtext, fontSize: 9 }}
+              noOfSections={4}
+              maxValue={maxTrend * 1.3}
+              hideRules={false}
+              rulesColor={theme.border}
+              rulesType="dashed"
+              backgroundColor={theme.card}
+              onPress={(item, index) => setSelectedPoint(index)}
+              pressEnabled
+              showStripOnPress
+              stripColor="#ef535066"
+              stripWidth={2}
+              focusedDataPointRadius={6}
+              focusedDataPointColor="#ef5350"
             />
-
-            {/* Legend */}
-            <View style={s.legendRow}>
-              <View style={s.legendItem}>
-                <View style={[s.legendDot, { backgroundColor: '#4caf50' }]} />
-                <Text style={s.legendText}>Income</Text>
-              </View>
-              <View style={s.legendItem}>
-                <View style={[s.legendDot, { backgroundColor: '#ef5350' }]} />
-                <Text style={s.legendText}>Expenses</Text>
-              </View>
-            </View>
-          </View>
-        </>
-      ) : (
-        <View style={[s.card, s.emptyCard]}>
-          <Ionicons name="wallet-outline" size={52} color="#d1d5db" />
-          <Text style={s.emptyTitle}>No transactions yet</Text>
-          <Text style={s.emptySubtitle}>Tap + to add your first one</Text>
+          </ScrollView>
         </View>
-      )}
 
-      {/* AI button */}
-      <TouchableOpacity
-        style={[s.aiBtn, remainingAI === 0 && { backgroundColor: '#9e9e9e' }]}
-        onPress={handleAI} activeOpacity={0.85}
-      >
-        <Ionicons name="sparkles" size={20} color="#fff" />
-        <Text style={s.aiBtnText}>  Get AI Suggestions</Text>
-        {remainingAI !== null && (
-          <View style={s.aiBadge}>
-            <Text style={s.aiBadgeText}>{remainingAI} left today</Text>
+        {/* ── Expense Categories ────────────────────────────────────────────── */}
+        <Text style={[s.sectionTitle, { color: theme.text }]}>Expense Categories</Text>
+        <View style={s.catGrid}>
+          {categorySpend.map(cat => (
+            <View key={cat.key} style={[s.catCard, { backgroundColor: theme.card }]}>
+              <View style={[s.catIcon, { backgroundColor: cat.color + '22' }]}>
+                <Ionicons name={cat.icon} size={20} color={cat.color} />
+              </View>
+              <Text style={[s.catLabel, { color: theme.subtext }]} numberOfLines={1}>{cat.shortLabel}</Text>
+              <Text style={[s.catAmount, { color: cat.spent > 0 ? cat.color : theme.muted }]}>
+                {cat.spent > 0 ? `$${cat.spent.toFixed(2)}` : '$0.00'}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* ── Latest Transactions ───────────────────────────────────────────── */}
+        <View style={s.txHeader}>
+          <Text style={[s.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Latest Transactions</Text>
+          <TouchableOpacity onPress={() => navigation.jumpTo('Transactions')}>
+            <Text style={s.seeAll}>See All</Text>
+          </TouchableOpacity>
+        </View>
+
+        {latestTx.length === 0 ? (
+          <View style={[s.card, s.emptyTx, { backgroundColor: theme.card }]}>
+            <Ionicons name="receipt-outline" size={36} color={theme.muted} />
+            <Text style={[s.emptyTxText, { color: theme.subtext }]}>No transactions yet</Text>
           </View>
+        ) : (
+          latestTx.map(item => {
+            const isIncome = (item.income || 0) > 0;
+            const cat = getCategoryByKey(item.category || 'other');
+            return (
+              <View key={item.id} style={[s.txRow, { backgroundColor: theme.card }]}>
+                <View style={[s.txIcon, { backgroundColor: cat.color + '22' }]}>
+                  <Ionicons name={cat.icon} size={18} color={cat.color} />
+                </View>
+                <View style={s.txCenter}>
+                  <Text style={[s.txTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
+                  <Text style={[s.txDate,  { color: theme.muted }]}>{formatDate(item.date)}</Text>
+                </View>
+                <Text style={[s.txAmount, { color: isIncome ? '#4caf50' : '#ef5350' }]}>
+                  {isIncome ? '+' : '-'}${(isIncome ? item.income : item.expenses).toFixed(2)}
+                </Text>
+              </View>
+            );
+          })
         )}
-      </TouchableOpacity>
-
-      {/* AI Modal */}
-      <Modal visible={modalVisible} animationType="slide" transparent>
-        <View style={s.overlay}>
-          <View style={s.modal}>
-            <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>AI Suggestions</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close-circle" size={26} color="#bbb" />
-              </TouchableOpacity>
-            </View>
-            {loadingAI ? (
-              <View style={s.loadingBox}>
-                <ActivityIndicator size="large" color="#6200ee" />
-                <Text style={s.loadingText}>Analysing your finances…</Text>
-              </View>
-            ) : (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={s.suggestText}>{suggestions}</Text>
-              </ScrollView>
-            )}
-            <TouchableOpacity style={s.refreshBtn} onPress={handleAI}>
-              <Ionicons name="refresh" size={16} color="#6200ee" />
-              <Text style={s.refreshText}>  Refresh</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
+      </View>
     </ScrollView>
   );
 }
 
-function SummaryCard({ label, value, color }) {
-  const display = value < 0
-    ? `-$${Math.abs(value).toFixed(2)}`
-    : `$${value.toFixed(2)}`;
-  return (
-    <View style={[s.summaryCard, { backgroundColor: color }]}>
-      <Text style={s.summaryLabel}>{label}</Text>
-      <Text style={s.summaryValue} numberOfLines={1} adjustsFontSizeToFit>{display}</Text>
-    </View>
-  );
-}
-
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f5f6fa' },
-  cardRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  summaryCard: { flex: 1, borderRadius: 16, padding: 12, alignItems: 'center' },
-  summaryLabel: { color: '#fff', fontSize: 11, fontWeight: '600', marginBottom: 4, opacity: 0.9 },
-  summaryValue: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  screen: { flex: 1 },
+  section: { padding: 16 },
 
+  // Balance card
+  balanceCard: { margin: 16, borderRadius: 24, padding: 24 },
+  balanceTop:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  balanceLabel:  { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
+  balanceAmount: { color: '#fff', fontSize: 38, fontWeight: '800', marginBottom: 20 },
+  balanceRow:    { flexDirection: 'row', alignItems: 'center' },
+  balanceSub:    { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  balanceDivider:{ width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 8 },
+  balanceSubLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+  balanceSubValue: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  // Add buttons
+  addRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  addBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 14, gap: 10 },
+  addBtnIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  addBtnText: { fontSize: 14, fontWeight: '700' },
+
+  // Cards
   card: {
-    backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 14,
+    borderRadius: 20, padding: 16, marginBottom: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  cardTitle:    { fontSize: 13, fontWeight: '700', color: '#555', marginBottom: 10 },
-  emptyCard:    { alignItems: 'center', paddingVertical: 40 },
-  emptyTitle:   { fontSize: 16, fontWeight: '600', color: '#aaa', marginTop: 14 },
-  emptySubtitle:{ fontSize: 13, color: '#ccc', marginTop: 4 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  cardTitle:  { fontSize: 15, fontWeight: '700' },
 
-  // Period toggle
-  toggleRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  toggleGroup: { flexDirection: 'row', backgroundColor: '#f3f4f6', borderRadius: 10, padding: 3 },
-  toggleBtn:   { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 },
-  toggleBtnActive: { backgroundColor: '#6200ee' },
-  toggleText:       { fontSize: 12, fontWeight: '600', color: '#888' },
+  // Trend toggle
+  toggleGroup:      { flexDirection: 'row', borderRadius: 10, padding: 3 },
+  toggleBtn:        { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 },
+  toggleBtnActive:  { backgroundColor: '#6200ee' },
+  toggleText:       { fontSize: 12, fontWeight: '600' },
   toggleTextActive: { color: '#fff' },
 
-  // Legend
-  legendRow:  { flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 10 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot:  { width: 10, height: 10, borderRadius: 5 },
-  legendText: { fontSize: 12, color: '#888', fontWeight: '500' },
+  // Tooltip
+  tooltipBanner: { borderRadius: 10, padding: 8, marginBottom: 10, alignItems: 'center' },
+  tooltipText:   { fontSize: 13, fontWeight: '600' },
 
-  aiBtn: {
-    backgroundColor: '#6200ee', borderRadius: 16, padding: 16,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#6200ee', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35, shadowRadius: 10, elevation: 6,
-  },
-  aiBtnText:  { color: '#fff', fontSize: 16, fontWeight: '700' },
-  aiBadge:    { marginLeft: 'auto', backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  aiBadgeText:{ color: '#fff', fontSize: 11, fontWeight: '700' },
+  // Section titles
+  sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 12 },
 
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modal: {
-    backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 24, maxHeight: '72%',
+  // Category grid
+  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  catCard: {
+    width: (W - 52) / 3,
+    borderRadius: 16, padding: 12, alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
   },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle:  { fontSize: 18, fontWeight: '800', color: '#222' },
-  loadingBox:  { alignItems: 'center', paddingVertical: 32 },
-  loadingText: { color: '#aaa', marginTop: 12, fontSize: 14 },
-  suggestText: { fontSize: 14, lineHeight: 24, color: '#444' },
-  refreshBtn: {
-    marginTop: 16, backgroundColor: '#f3e8ff', borderRadius: 12, padding: 12,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+  catIcon:   { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  catLabel:  { fontSize: 11, fontWeight: '600', marginBottom: 4, textAlign: 'center' },
+  catAmount: { fontSize: 13, fontWeight: '800' },
+
+  // Transaction header
+  txHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  seeAll:   { color: '#6200ee', fontWeight: '700', fontSize: 13 },
+
+  // Transaction rows
+  txRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 16, padding: 12, marginBottom: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
-  refreshText: { color: '#6200ee', fontWeight: '700' },
+  txIcon:   { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  txCenter: { flex: 1 },
+  txTitle:  { fontSize: 14, fontWeight: '600' },
+  txDate:   { fontSize: 11, marginTop: 2 },
+  txAmount: { fontSize: 14, fontWeight: '800' },
+
+  emptyTx:     { alignItems: 'center', paddingVertical: 24 },
+  emptyTxText: { marginTop: 8, fontSize: 14, fontWeight: '500' },
 });

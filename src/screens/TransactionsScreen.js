@@ -3,6 +3,8 @@ import { View, Text, FlatList, TouchableOpacity, Alert, StyleSheet } from 'react
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { getAllTransactions, deleteTransaction } from '../database/db';
+import { useTheme } from '../context/ThemeContext';
+import { getCategoryByKey } from '../utils/categories';
 
 const formatDate = (str) => {
   if (!str) return '';
@@ -11,6 +13,7 @@ const formatDate = (str) => {
 };
 
 export default function TransactionsScreen() {
+  const { theme } = useTheme();
   const [transactions, setTransactions] = useState([]);
   const navigation = useNavigation();
 
@@ -33,22 +36,22 @@ export default function TransactionsScreen() {
 
   const renderItem = ({ item }) => {
     const isIncome = (item.income || 0) > 0;
+    const cat = isIncome ? null : getCategoryByKey(item.category || 'other');
     return (
-      <View style={s.row}>
-        {/* Colour icon */}
-        <View style={[s.iconBox, { backgroundColor: isIncome ? '#e8f5e9' : '#ffebee' }]}>
+      <View style={[s.row, { backgroundColor: theme.card }]}>
+        <View style={[s.iconBox, { backgroundColor: isIncome ? '#e8f5e9' : (cat.color + '22') }]}>
           <Ionicons
-            name={isIncome ? 'arrow-down-circle' : 'arrow-up-circle'}
-            size={22} color={isIncome ? '#4caf50' : '#ef5350'}
+            name={isIncome ? 'arrow-down-circle' : cat.icon}
+            size={22} color={isIncome ? '#4caf50' : cat.color}
           />
         </View>
 
         {/* Title + date + remarks */}
         <View style={s.rowCenter}>
-          <Text style={s.rowTitle} numberOfLines={1}>{item.title}</Text>
-          <Text style={s.rowDate}>{formatDate(item.date)}</Text>
+          <Text style={[s.rowTitle,   { color: theme.text    }]} numberOfLines={1}>{item.title}</Text>
+          <Text style={[s.rowDate,    { color: theme.muted   }]}>{formatDate(item.date)}</Text>
           {!!item.remarks && (
-            <Text style={s.rowRemarks} numberOfLines={1}>{item.remarks}</Text>
+            <Text style={[s.rowRemarks, { color: theme.subtext }]} numberOfLines={1}>{item.remarks}</Text>
           )}
         </View>
 
@@ -70,12 +73,12 @@ export default function TransactionsScreen() {
   };
 
   return (
-    <View style={s.screen}>
+    <View style={[s.screen, { backgroundColor: theme.background }]}>
       {transactions.length === 0 ? (
         <View style={s.empty}>
-          <Ionicons name="receipt-outline" size={56} color="#d1d5db" />
-          <Text style={s.emptyTitle}>No transactions yet</Text>
-          <Text style={s.emptySub}>Tap + to add your first one</Text>
+          <Ionicons name="receipt-outline" size={56} color={theme.muted} />
+          <Text style={[s.emptyTitle, { color: theme.subtext }]}>No transactions yet</Text>
+          <Text style={[s.emptySub,   { color: theme.muted   }]}>Tap + to add your first one</Text>
         </View>
       ) : (
         <FlatList

@@ -26,6 +26,7 @@ export default {
       'expo-sqlite',
       'expo-asset',
       '@react-native-community/datetimepicker',
+      'expo-document-picker',
     ],
     extra: {
       // In local dev: reads from .env file

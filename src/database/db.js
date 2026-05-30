@@ -28,6 +28,7 @@ export const getDB = async () => {
 
     try { await db.execAsync(`ALTER TABLE transactions ADD COLUMN date TEXT`); } catch {}
     try { await db.execAsync(`ALTER TABLE transactions ADD COLUMN remarks TEXT DEFAULT ''`); } catch {}
+    try { await db.execAsync(`ALTER TABLE transactions ADD COLUMN category TEXT DEFAULT 'other'`); } catch {}
 
 
     await db.execAsync(`
@@ -44,25 +45,57 @@ export const getAllTransactions = async () => {
   return await db.getAllAsync('SELECT * FROM transactions ORDER BY date DESC, created_at DESC');
 };
 
-export const addTransaction = async (title, income, expenses, date, remarks = '') => {
+export const addTransaction = async (title, income, expenses, date, remarks = '', category = 'other') => {
   const db = await getDB();
   return await db.runAsync(
-    'INSERT INTO transactions (title, income, expenses, date, remarks) VALUES (?, ?, ?, ?, ?)',
-    [title, parseFloat(income) || 0, parseFloat(expenses) || 0, date, remarks]
+    'INSERT INTO transactions (title, income, expenses, date, remarks, category) VALUES (?, ?, ?, ?, ?, ?)',
+    [title, parseFloat(income) || 0, parseFloat(expenses) || 0, date, remarks, category]
   );
 };
 
-export const updateTransaction = async (id, title, income, expenses, date, remarks = '') => {
+export const updateTransaction = async (id, title, income, expenses, date, remarks = '', category = 'other') => {
   const db = await getDB();
   return await db.runAsync(
-    'UPDATE transactions SET title = ?, income = ?, expenses = ?, date = ?, remarks = ? WHERE id = ?',
-    [title, parseFloat(income) || 0, parseFloat(expenses) || 0, date, remarks, id]
+    'UPDATE transactions SET title = ?, income = ?, expenses = ?, date = ?, remarks = ?, category = ? WHERE id = ?',
+    [title, parseFloat(income) || 0, parseFloat(expenses) || 0, date, remarks, category, id]
   );
 };
 
 export const deleteTransaction = async (id) => {
   const db = await getDB();
   return await db.runAsync('DELETE FROM transactions WHERE id = ?', [id]);
+};
+
+// ─── Export / Import ─────────────────────────────────────────────────────────
+
+// Returns all transactions as a clean array (no internal SQLite rowid noise)
+export const exportTransactions = async () => {
+  const db   = await getDB();
+  const rows = await db.getAllAsync('SELECT title, income, expenses, date, remarks, created_at FROM transactions ORDER BY date DESC');
+  return rows;
+};
+
+// Replace: wipe all existing data then insert imported rows
+export const replaceAllTransactions = async (rows) => {
+  const db = await getDB();
+  await db.runAsync('DELETE FROM transactions');
+  for (const t of rows) {
+    await db.runAsync(
+      'INSERT INTO transactions (title, income, expenses, date, remarks, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [t.title, parseFloat(t.income) || 0, parseFloat(t.expenses) || 0, t.date || '', t.remarks || '', t.created_at || new Date().toISOString()]
+    );
+  }
+};
+
+// Merge: keep existing data and append imported rows
+export const mergeTransactions = async (rows) => {
+  const db = await getDB();
+  for (const t of rows) {
+    await db.runAsync(
+      'INSERT INTO transactions (title, income, expenses, date, remarks, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [t.title, parseFloat(t.income) || 0, parseFloat(t.expenses) || 0, t.date || '', t.remarks || '', t.created_at || new Date().toISOString()]
+    );
+  }
 };
 
 // ─── AI usage tracking ────────────────────────────────────────────────────────
