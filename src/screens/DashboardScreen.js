@@ -21,55 +21,50 @@ const formatDate = (str) => {
   return d.toLocaleDateString('en-AU', { day: '2-digit', month: 'short' });
 };
 
-const BAR_COLOR         = '#7c3aed';
-const BAR_COLOR_FADED   = '#ddd6fe';
-const BAR_COLOR_SELECTED= '#6200ee';
+// FIX 1: Brightened the primary color variant so it stands out against true dark backgrounds
+const BAR_COLOR          = '#a78bfa'; // Lighter neon-purple instead of deep #7c3aed
+const BAR_COLOR_FADED    = '#374151'; // Darker grey-purple tint to clearly contrast zero states
+const BAR_COLOR_SELECTED = '#c084fc';
 
-const buildDailyTrend = (transactions, selectedIdx) => {
-  const data = [];
-  for (let i = 6; i >= 0; i--) {
+const localDateKey = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// Keep data items lean — no labelWidth override, which shifts gifted-charts' internal
+// bar geometry and decouples the visual bar from its hit area.
+const makeBar = (value, label) => ({
+  value:      value > 0 ? value : 0.001,
+  label,
+  frontColor: value > 0 ? BAR_COLOR : BAR_COLOR_FADED,
+});
+
+const buildDailyTrend = (transactions) =>
+  Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key    = d.toISOString().substring(0, 10);
-    const label  = d.toLocaleDateString('en-AU', { weekday: 'short' }); // Mon Tue Wed…
-    const dayTx  = transactions.filter(t => (t.date || '').substring(0, 10) === key);
-    const value  = dayTx.reduce((s, t) => s + (t.expenses || 0), 0);
-    const idx    = 6 - i;
-    data.push({
-      value,
-      label,
-      frontColor:  selectedIdx === idx ? BAR_COLOR_SELECTED : (value > 0 ? BAR_COLOR : BAR_COLOR_FADED),
-      topLabelComponent: selectedIdx === idx
-        ? () => <Text style={{ fontSize: 9, color: BAR_COLOR_SELECTED, fontWeight: '700', marginBottom: 2 }}>${value.toFixed(0)}</Text>
-        : undefined,
-    });
-  }
-  return data;
-};
+    d.setDate(d.getDate() - (6 - i));
+    const key   = localDateKey(d);
+    const label = d.toLocaleDateString('en-AU', { weekday: 'short' });
+    const value = transactions
+      .filter(t => (t.date || '').substring(0, 10) === key)
+      .reduce((s, t) => s + (t.expenses || 0), 0);
+    return makeBar(value, label);
+  });
 
-const buildWeeklyTrend = (transactions, selectedIdx) => {
-  const data = [];
-  for (let i = 7; i >= 0; i--) {
-    const end   = new Date(); end.setDate(end.getDate() - i * 7);
+const buildWeeklyTrend = (transactions) =>
+  Array.from({ length: 8 }, (_, i) => {
+    const end   = new Date(); end.setDate(end.getDate() - (7 - i) * 7);
     const start = new Date(end); start.setDate(start.getDate() - 6);
-    const label = start.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }); // 1 May
-    const weekTx = transactions.filter(t => {
-      const d = new Date((t.date || '') + 'T00:00:00');
-      return d >= start && d <= end;
-    });
-    const value = weekTx.reduce((s, t) => s + (t.expenses || 0), 0);
-    const idx   = 7 - i;
-    data.push({
-      value,
-      label,
-      frontColor: selectedIdx === idx ? BAR_COLOR_SELECTED : (value > 0 ? BAR_COLOR : BAR_COLOR_FADED),
-      topLabelComponent: selectedIdx === idx
-        ? () => <Text style={{ fontSize: 9, color: BAR_COLOR_SELECTED, fontWeight: '700', marginBottom: 2 }}>${value.toFixed(0)}</Text>
-        : undefined,
-    });
-  }
-  return data;
-};
+    // Every 3rd bar labelled — "12 Apr" needs ~40px at fontSize 9; skipping prevents collision
+    const label = i % 3 === 0
+      ? start.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+      : '';
+    const value = transactions
+      .filter(t => {
+        const d = new Date((t.date || '') + 'T00:00:00');
+        return d >= start && d <= end;
+      })
+      .reduce((s, t) => s + (t.expenses || 0), 0);
+    return makeBar(value, label);
+  });
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -89,7 +84,6 @@ export default function DashboardScreen({ navigation }) {
   const totalExpenses = transactions.reduce((s, t) => s + (t.expenses || 0), 0);
   const balance       = totalIncome - totalExpenses;
 
-  // Category spending
   const categorySpend = CATEGORIES.map(cat => ({
     ...cat,
     spent: transactions
@@ -97,13 +91,11 @@ export default function DashboardScreen({ navigation }) {
       .reduce((s, t) => s + (t.expenses || 0), 0),
   }));
 
-  // Latest 5 transactions
   const latestTx = transactions.slice(0, 5);
 
-  // Trend data
   const trendData = trendPeriod === 'Daily'
-    ? buildDailyTrend(transactions, selectedBar)
-    : buildWeeklyTrend(transactions, selectedBar);
+    ? buildDailyTrend(transactions)
+    : buildWeeklyTrend(transactions);
 
   const maxTrend = Math.max(...trendData.map(d => d.value), 10);
 
@@ -113,7 +105,7 @@ export default function DashboardScreen({ navigation }) {
       contentContainerStyle={{ paddingBottom: 32 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Your Balance ──────────────────────────────────────────────────── */}
+      {/* Your Balance */}
       <View style={[s.balanceCard, { backgroundColor: '#6200ee' }]}>
         <View style={s.balanceTop}>
           <Text style={s.balanceLabel}>Your Balance</Text>
@@ -140,7 +132,7 @@ export default function DashboardScreen({ navigation }) {
       </View>
 
       <View style={s.section}>
-        {/* ── Add buttons ───────────────────────────────────────────────────── */}
+        {/* Add buttons */}
         <View style={s.addRow}>
           <TouchableOpacity
             style={[s.addBtn, { backgroundColor: '#e8f5e9' }]}
@@ -165,7 +157,7 @@ export default function DashboardScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── Expense Trend ─────────────────────────────────────────────────── */}
+        {/* Expense Trend Card */}
         <View style={[s.card, { backgroundColor: theme.card }]}>
           <View style={s.cardHeader}>
             <Text style={[s.cardTitle, { color: theme.text }]}>Expense Trend</Text>
@@ -183,7 +175,6 @@ export default function DashboardScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Selected bar summary */}
           {selectedBar !== null && trendData[selectedBar] ? (
             <View style={[s.tooltipBanner, { backgroundColor: theme.background }]}>
               <Text style={[s.tooltipText, { color: theme.text }]}>
@@ -197,33 +188,36 @@ export default function DashboardScreen({ navigation }) {
             <Text style={[s.tooltipHint, { color: theme.muted }]}>Tap a bar to see details</Text>
           )}
 
-          <BarChart
-            data={trendData}
-            barWidth={trendPeriod === 'Daily' ? 32 : 24}
-            spacing={trendPeriod === 'Daily' ? 12 : 10}
-            roundedTop
-            barBorderRadius={6}
-            noOfSections={4}
-            maxValue={maxTrend * 1.25}
-            height={160}
-            width={W - 64}
-            xAxisColor={theme.border}
-            yAxisColor="transparent"
-            yAxisTextStyle={{ color: theme.subtext, fontSize: 10 }}
-            xAxisLabelTextStyle={{ color: theme.subtext, fontSize: 10, marginTop: 4 }}
-            hideRules={false}
-            rulesColor={theme.border}
-            rulesType="dashed"
-            backgroundColor={theme.card}
-            disableScroll={trendPeriod === 'Daily'}
-            onPress={(item, index) => setSelectedBar(prev => prev === index ? null : index)}
-            showGradient
-            gradientColor={BAR_COLOR_FADED}
-            isAnimated
-          />
+          {/* width = W-64: full card inner width (section 16×2 + card 16×2 = 64px total padding).
+              gifted-charts subtracts ~40px internally for the Y-axis label area, leaving
+              ~W-104 for bars. Daily: 7×30 + 6×8 = 258px ≤ W-104 ✓
+              Weekly: 8×22 + 7×8 = 232px ≤ W-104 ✓                                      */}
+          <View style={{ marginBottom: 8 }}>
+            <BarChart
+              data={trendData}
+              frontColor={BAR_COLOR}
+              barWidth={trendPeriod === 'Daily' ? 30 : 22}
+              spacing={8}
+              roundedTop
+              barBorderRadius={5}
+              noOfSections={4}
+              maxValue={maxTrend * 1.25}
+              height={160}
+              width={W - 64}
+              xAxisColor={theme.border}
+              yAxisColor="transparent"
+              yAxisTextStyle={{ color: theme.subtext, fontSize: 10 }}
+              xAxisLabelTextStyle={{ color: theme.subtext, fontSize: 9 }}
+              hideRules={false}
+              rulesColor={theme.border}
+              rulesType="dashed"
+              disableScroll
+              onPress={(item, index) => setSelectedBar(prev => prev === index ? null : index)}
+            />
+          </View>
         </View>
 
-        {/* ── Expense Categories ────────────────────────────────────────────── */}
+        {/* Expense Categories */}
         <Text style={[s.sectionTitle, { color: theme.text }]}>Expense Categories</Text>
         <View style={s.catGrid}>
           {categorySpend.map(cat => (
@@ -239,7 +233,7 @@ export default function DashboardScreen({ navigation }) {
           ))}
         </View>
 
-        {/* ── Latest Transactions ───────────────────────────────────────────── */}
+        {/* Latest Transactions */}
         <View style={s.txHeader}>
           <Text style={[s.sectionTitle, { color: theme.text, marginBottom: 0 }]}>Latest Transactions</Text>
           <TouchableOpacity onPress={() => navigation.dispatch(TabActions.jumpTo('Transactions'))}>
@@ -281,7 +275,6 @@ const s = StyleSheet.create({
   screen: { flex: 1 },
   section: { padding: 16 },
 
-  // Balance card
   balanceCard: { margin: 16, borderRadius: 24, padding: 24 },
   balanceTop:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   balanceLabel:  { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
@@ -292,13 +285,11 @@ const s = StyleSheet.create({
   balanceSubLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
   balanceSubValue: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-  // Add buttons
   addRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   addBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: 14, gap: 10 },
   addBtnIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   addBtnText: { fontSize: 14, fontWeight: '700' },
 
-  // Cards
   card: {
     borderRadius: 20, padding: 16, marginBottom: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
@@ -307,22 +298,27 @@ const s = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
   cardTitle:  { fontSize: 15, fontWeight: '700' },
 
-  // Trend toggle
+  // New chart container rules ensuring nested layout elements stay centered
+  chartWrapper: {
+    paddingRight: 8,
+    marginTop: 8,
+    marginBottom: 24, // Fixes X-axis labels leaking downward
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   toggleGroup:      { flexDirection: 'row', borderRadius: 10, padding: 3 },
   toggleBtn:        { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 },
   toggleBtnActive:  { backgroundColor: '#6200ee' },
   toggleText:       { fontSize: 12, fontWeight: '600' },
   toggleTextActive: { color: '#fff' },
 
-  // Tooltip
   tooltipBanner: { borderRadius: 10, padding: 8, marginBottom: 10, alignItems: 'center' },
   tooltipText:   { fontSize: 13, fontWeight: '600' },
   tooltipHint:   { fontSize: 12, textAlign: 'center', marginBottom: 10 },
 
-  // Section titles
   sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 12 },
 
-  // Category grid
   catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
   catCard: {
     width: (W - 52) / 3,
@@ -334,11 +330,9 @@ const s = StyleSheet.create({
   catLabel:  { fontSize: 11, fontWeight: '600', marginBottom: 4, textAlign: 'center' },
   catAmount: { fontSize: 13, fontWeight: '800' },
 
-  // Transaction header
   txHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   seeAll:   { color: '#6200ee', fontWeight: '700', fontSize: 13 },
 
-  // Transaction rows
   txRow: {
     flexDirection: 'row', alignItems: 'center',
     borderRadius: 16, padding: 12, marginBottom: 8,
