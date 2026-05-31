@@ -7,7 +7,7 @@ import { getAIUsageToday, incrementAIUsage, AI_DAILY_LIMIT } from '../database/d
 const GEMINI_API_KEY = Constants.expoConfig?.extra?.geminiApiKey || '';
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 
 export const getRemainingAIRequests = async () => {
   const used = await getAIUsageToday();
@@ -37,7 +37,7 @@ export const getSuggestions = async (transactions) => {
   }));
 
   const prompt = `
-You are a personal finance advisor. Analyse the transaction data below and give exactly 5 short, actionable suggestions.
+You are a personal finance advisor. Analyse the transaction data below and give exactly 3 short, actionable suggestions.
 
 SUMMARY:
 - Total Income:   $${totalIncome.toFixed(2)}
@@ -49,7 +49,7 @@ TRANSACTIONS:
 ${JSON.stringify(cleaned, null, 2)}
 
 INSTRUCTIONS:
-- Write exactly 5 suggestions, numbered 1 to 5
+- Write exactly 3 suggestions, numbered 1 to 3
 - Each suggestion must be one sentence only
 - Be specific — reference actual amounts or titles from the data
 - No markdown, no bold, no asterisks, no bullet symbols

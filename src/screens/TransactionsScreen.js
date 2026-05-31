@@ -4,6 +4,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { getAllTransactions, deleteTransaction } from '../database/db';
 import { useTheme } from '../context/ThemeContext';
+import { useCurrency } from '../context/CurrencyContext';
 import { getCategoryByKey } from '../utils/categories';
 
 const formatDate = (str) => {
@@ -14,6 +15,7 @@ const formatDate = (str) => {
 
 export default function TransactionsScreen() {
   const { theme } = useTheme();
+  const { currency } = useCurrency();
   const [transactions, setTransactions] = useState([]);
   const navigation = useNavigation();
 
@@ -57,8 +59,8 @@ export default function TransactionsScreen() {
 
         {/* Amount */}
         <View style={s.rowAmount}>
-          {(item.income   || 0) > 0 && <Text style={s.incomeText}>+${item.income.toFixed(2)}</Text>}
-          {(item.expenses || 0) > 0 && <Text style={s.expenseText}>-${item.expenses.toFixed(2)}</Text>}
+          {(item.income   || 0) > 0 && <Text style={s.incomeText}>+{currency}{item.income.toFixed(2)}</Text>}
+          {(item.expenses || 0) > 0 && <Text style={s.expenseText}>-{currency}{item.expenses.toFixed(2)}</Text>}
         </View>
 
         {/* Actions */}

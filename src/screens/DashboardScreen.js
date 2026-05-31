@@ -8,6 +8,7 @@ import { BarChart } from 'react-native-gifted-charts';
 import { Ionicons } from '@expo/vector-icons';
 import { getAllTransactions } from '../database/db';
 import { useTheme } from '../context/ThemeContext';
+import { useCurrency } from '../context/CurrencyContext';
 import { CATEGORIES, getCategoryByKey } from '../utils/categories';
 
 const W = Dimensions.get('window').width;
@@ -70,6 +71,7 @@ const buildWeeklyTrend = (transactions) =>
 
 export default function DashboardScreen({ navigation }) {
   const { theme } = useTheme();
+  const { currency } = useCurrency();
 
   const [transactions, setTransactions] = useState([]);
   const [trendPeriod, setTrendPeriod]     = useState('Daily');
@@ -114,19 +116,19 @@ export default function DashboardScreen({ navigation }) {
           </TouchableOpacity>
         </View>
         <Text style={s.balanceAmount}>
-          {hidden ? '••••••' : `${balance < 0 ? '-' : ''}$${Math.abs(balance).toFixed(2)}`}
+          {hidden ? '••••••' : `${balance < 0 ? '-' : ''}${currency}${Math.abs(balance).toFixed(2)}`}
         </Text>
         <View style={s.balanceRow}>
           <View style={s.balanceSub}>
             <Ionicons name="arrow-down-circle" size={14} color="#a5f3a5" />
             <Text style={s.balanceSubLabel}>  Income  </Text>
-            <Text style={s.balanceSubValue}>{hidden ? '••••' : `$${totalIncome.toFixed(2)}`}</Text>
+            <Text style={s.balanceSubValue}>{hidden ? '••••' : `${currency}${totalIncome.toFixed(2)}`}</Text>
           </View>
           <View style={s.balanceDivider} />
           <View style={s.balanceSub}>
             <Ionicons name="arrow-up-circle" size={14} color="#fca5a5" />
             <Text style={s.balanceSubLabel}>  Expenses  </Text>
-            <Text style={s.balanceSubValue}>{hidden ? '••••' : `$${totalExpenses.toFixed(2)}`}</Text>
+            <Text style={s.balanceSubValue}>{hidden ? '••••' : `${currency}${totalExpenses.toFixed(2)}`}</Text>
           </View>
         </View>
       </View>
@@ -180,7 +182,7 @@ export default function DashboardScreen({ navigation }) {
               <Text style={[s.tooltipText, { color: theme.text }]}>
                 {trendData[selectedBar].label}{'  '}
                 <Text style={{ color: BAR_COLOR_SELECTED, fontWeight: '800' }}>
-                  ${trendData[selectedBar].value.toFixed(2)}
+                  {currency}{trendData[selectedBar].value.toFixed(2)}
                 </Text>
               </Text>
             </View>
@@ -227,7 +229,7 @@ export default function DashboardScreen({ navigation }) {
               </View>
               <Text style={[s.catLabel, { color: theme.subtext }]} numberOfLines={1}>{cat.shortLabel}</Text>
               <Text style={[s.catAmount, { color: cat.spent > 0 ? cat.color : theme.muted }]}>
-                {cat.spent > 0 ? `$${cat.spent.toFixed(2)}` : '$0.00'}
+                {cat.spent > 0 ? `${currency}${cat.spent.toFixed(2)}` : `${currency}0.00`}
               </Text>
             </View>
           ))}
@@ -260,7 +262,7 @@ export default function DashboardScreen({ navigation }) {
                   <Text style={[s.txDate,  { color: theme.muted }]}>{formatDate(item.date)}</Text>
                 </View>
                 <Text style={[s.txAmount, { color: isIncome ? '#4caf50' : '#ef5350' }]}>
-                  {isIncome ? '+' : '-'}${(isIncome ? item.income : item.expenses).toFixed(2)}
+                  {isIncome ? '+' : '-'}{currency}{(isIncome ? item.income : item.expenses).toFixed(2)}
                 </Text>
               </View>
             );

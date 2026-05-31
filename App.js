@@ -6,6 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { CurrencyProvider } from './src/context/CurrencyContext';
 
 import DashboardScreen    from './src/screens/DashboardScreen';
 import TransactionsScreen from './src/screens/TransactionsScreen';
@@ -74,9 +75,11 @@ function RootStack() {
 export default function App() {
   return (
     <ThemeProvider>
-      <NavigationContainer>
-        <RootStack />
-      </NavigationContainer>
+      <CurrencyProvider>
+        <NavigationContainer>
+          <RootStack />
+        </NavigationContainer>
+      </CurrencyProvider>
     </ThemeProvider>
   );
 }

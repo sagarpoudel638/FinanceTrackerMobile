@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getAllTransactions } from '../database/db';
 import { getSuggestions, getRemainingAIRequests } from '../utils/gemini';
 import { useTheme } from '../context/ThemeContext';
+import { useCurrency } from '../context/CurrencyContext';
 import { CATEGORIES, getCategoryByKey } from '../utils/categories';
 
 const W = Dimensions.get('window').width;
@@ -58,6 +59,7 @@ const buildData = (transactions, period) => {
 
 export default function InsightsScreen() {
   const { theme } = useTheme();
+  const { currency } = useCurrency();
   const [transactions, setTransactions] = useState([]);
   const [period, setPeriod]             = useState('Monthly');
   const [suggestions, setSuggestions]   = useState('');
@@ -131,8 +133,8 @@ export default function InsightsScreen() {
             )}
           />
           <View style={s.pieLegend}>
-            <LegendItem color="#4caf50" label="Income"   value={`$${totalIncome.toFixed(2)}`}   theme={theme} />
-            <LegendItem color="#ef5350" label="Expenses" value={`$${totalExpenses.toFixed(2)}`} theme={theme} />
+            <LegendItem color="#4caf50" label="Income"   value={`${currency}${totalIncome.toFixed(2)}`}   theme={theme} />
+            <LegendItem color="#ef5350" label="Expenses" value={`${currency}${totalExpenses.toFixed(2)}`} theme={theme} />
           </View>
         </View>
       </View>
@@ -167,7 +169,7 @@ export default function InsightsScreen() {
                     key={cat.key}
                     color={cat.color}
                     label={cat.shortLabel}
-                    value={`$${spent.toFixed(2)}`}
+                    value={`${currency}${spent.toFixed(2)}`}
                     theme={theme}
                   />
                 );

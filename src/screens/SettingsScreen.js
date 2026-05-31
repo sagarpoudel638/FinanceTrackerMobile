@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, ScrollView, Switch,
+  Alert, ActivityIndicator, ScrollView, Switch, Modal, FlatList,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { useCurrency, CURRENCIES } from '../context/CurrencyContext';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
@@ -60,9 +61,11 @@ const fromCSV = (text) => {
 
 export default function SettingsScreen() {
   const { theme, isDark, toggleTheme } = useTheme();
-  const [txCount, setTxCount]   = useState(0);
-  const [loading, setLoading]   = useState(false);
-  const [status, setStatus]     = useState('');
+  const { currency, setCurrency } = useCurrency();
+  const [txCount, setTxCount]       = useState(0);
+  const [loading, setLoading]       = useState(false);
+  const [status, setStatus]         = useState('');
+  const [currencyModal, setCurrencyModal] = useState(false);
 
   useFocusEffect(useCallback(() => { loadCount(); }, []));
 
@@ -206,6 +209,62 @@ export default function SettingsScreen() {
         />
       </View>
 
+      {/* Currency picker */}
+      <TouchableOpacity
+        style={[s.statCard, { backgroundColor: theme.card }]}
+        onPress={() => setCurrencyModal(true)}
+        activeOpacity={0.8}
+      >
+        <Text style={{ fontSize: 26, width: 34, textAlign: 'center' }}>💱</Text>
+        <View style={{ marginLeft: 14, flex: 1 }}>
+          <Text style={[s.statLabel, { color: theme.subtext }]}>Currency</Text>
+          <Text style={[s.statValue, { fontSize: 18, fontWeight: '700', color: theme.text }]}>
+            {currency}{'  '}<Text style={{ fontSize: 13, color: theme.subtext, fontWeight: '500' }}>
+              {CURRENCIES.find(c => c.symbol === currency)?.label ?? ''}
+            </Text>
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.muted} />
+      </TouchableOpacity>
+
+      {/* Currency modal */}
+      <Modal visible={currencyModal} animationType="slide" transparent>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalSheet, { backgroundColor: theme.card }]}>
+            <View style={s.modalHeader}>
+              <Text style={[s.modalTitle, { color: theme.text }]}>Select Currency</Text>
+              <TouchableOpacity onPress={() => setCurrencyModal(false)}>
+                <Ionicons name="close-circle" size={26} color="#bbb" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={CURRENCIES}
+              keyExtractor={(_, i) => String(i)}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const selected = currency === item.symbol;
+                return (
+                  <TouchableOpacity
+                    style={[s.currencyRow, selected && s.currencyRowSelected, { borderBottomColor: theme.border }]}
+                    onPress={() => { setCurrency(item.symbol); setCurrencyModal(false); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.currencyFlag}>{item.flag}</Text>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={[s.currencyLabel, { color: theme.text }]}>{item.label}</Text>
+                    </View>
+                    <Text style={[s.currencySymbol, { color: selected ? '#6200ee' : theme.subtext }]}>
+                      {item.symbol}
+                    </Text>
+                    {selected && <Ionicons name="checkmark-circle" size={20} color="#6200ee" style={{ marginLeft: 8 }} />}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
+
       {/* Stats */}
       <View style={[s.statCard, { backgroundColor: theme.card }]}>
         <Ionicons name="wallet-outline" size={28} color="#6200ee" />
@@ -309,4 +368,15 @@ const s = StyleSheet.create({
   },
   infoTitle: { fontSize: 14, fontWeight: '700', color: '#6200ee', marginBottom: 10 },
   infoText:  { fontSize: 13, color: '#7c3aed', lineHeight: 22 },
+
+  // Currency modal
+  modalOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalSheet:    { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, maxHeight: '75%' },
+  modalHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle:    { fontSize: 18, fontWeight: '800' },
+  currencyRow:   { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth },
+  currencyRowSelected: { backgroundColor: '#f3e8ff', borderRadius: 12, paddingHorizontal: 8 },
+  currencyFlag:  { fontSize: 22, width: 32, textAlign: 'center' },
+  currencyLabel: { fontSize: 14, fontWeight: '500' },
+  currencySymbol:{ fontSize: 16, fontWeight: '700', minWidth: 36, textAlign: 'right' },
 });

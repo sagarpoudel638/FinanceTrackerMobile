@@ -8,6 +8,7 @@ import { useRoute, useNavigation, TabActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { addTransaction, updateTransaction } from '../database/db';
 import { useTheme } from '../context/ThemeContext';
+import { useCurrency } from '../context/CurrencyContext';
 import { CATEGORIES } from '../utils/categories';
 
 const toDateString = (date) => date.toISOString().substring(0, 10); // 'YYYY-MM-DD'
@@ -22,6 +23,7 @@ export default function AddEditScreen() {
   const navigation = useNavigation();
 
   const { theme } = useTheme();
+  const { currency } = useCurrency();
   const editing     = route.params?.transaction;
   const defaultType = route.params?.defaultType || 'income';
   const isEditing   = !!editing;
@@ -132,7 +134,7 @@ export default function AddEditScreen() {
         </View>
 
         {/* Amount */}
-        <Text style={[s.label, { color: theme.subtext }]}>AMOUNT (A$) *</Text>
+        <Text style={[s.label, { color: theme.subtext }]}>AMOUNT ({currency}) *</Text>
         <View style={[s.inputRow, { backgroundColor: theme.input, borderColor: theme.border }]}>
           <Ionicons
             name={type === 'income' ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline'}
