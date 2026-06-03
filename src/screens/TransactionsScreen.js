@@ -64,7 +64,7 @@ export default function TransactionsScreen() {
         </View>
 
         {/* Actions */}
-        <TouchableOpacity onPress={() => navigation.navigate('Add/Edit', { transaction: item })} style={s.actionBtn}>
+        <TouchableOpacity onPress={() => navigation.navigate('AddEdit', { transaction: item })} style={s.actionBtn}>
           <Ionicons name="pencil-outline" size={17} color="#bbb" />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => handleDelete(item.id)} style={s.actionBtn}>
