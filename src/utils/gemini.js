@@ -2,41 +2,52 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import Constants from 'expo-constants';
 import { getAIUsageToday, incrementAIUsage, AI_DAILY_LIMIT } from '../database/db';
 
-// Local dev: reads from .env → app.config.js extra.geminiApiKey
-// EAS Build: reads from EAS Secret injected at build time
 const GEMINI_API_KEY = Constants.expoConfig?.extra?.geminiApiKey || '';
 
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
+// Fail gracefully early if the key is missing
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+// Use the recommended model for fast, lightweight text tasks
+const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' }) : null;
 
 export const getRemainingAIRequests = async () => {
-  const used = await getAIUsageToday();
-  return Math.max(0, AI_DAILY_LIMIT - used);
+  try {
+    const used = await getAIUsageToday();
+    return Math.max(0, AI_DAILY_LIMIT - used);
+  } catch {
+    return 0; // Default to 0 if DB fails
+  }
 };
 
 export const getSuggestions = async (transactions) => {
+  if (!GEMINI_API_KEY || !model) {
+    return 'AI features are currently unavailable. Missing configuration.';
+  }
+
   if (!transactions || transactions.length === 0) {
     return 'Add some transactions first to get AI suggestions.';
   }
 
-  // Check daily limit before calling the API
-  const used = await getAIUsageToday();
-  if (used >= AI_DAILY_LIMIT) {
-    return `Daily limit reached (${AI_DAILY_LIMIT} AI requests per day). Come back tomorrow!`;
-  }
+  try {
+    // 1. Check daily limit inside the try block to catch DB errors
+    const used = await getAIUsageToday();
+    if (used >= AI_DAILY_LIMIT) {
+      return `Daily limit reached (${AI_DAILY_LIMIT} AI requests per day). Come back tomorrow!`;
+    }
 
-  const totalIncome   = transactions.reduce((s, t) => s + (t.income   || 0), 0);
-  const totalExpenses = transactions.reduce((s, t) => s + (t.expenses || 0), 0);
-  const net = totalIncome - totalExpenses;
+    // 2. Math & Prompt preparation
+    const totalIncome   = transactions.reduce((s, t) => s + (t.income   || 0), 0);
+    const totalExpenses = transactions.reduce((s, t) => s + (t.expenses || 0), 0);
+    const net = totalIncome - totalExpenses;
 
-  const cleaned = transactions.slice(0, 20).map(t => ({
-    title:    t.title,
-    income:   t.income,
-    expenses: t.expenses,
-    date:     t.created_at,
-  }));
+    // Take the 20 most recent items safely
+    const cleaned = transactions.slice(0, 20).map(t => ({
+      title:    t.title,
+      income:   t.income,
+      expenses: t.expenses,
+      date:     t.created_at,
+    }));
 
-  const prompt = `
+    const prompt = `
 You are a personal finance advisor. Analyse the transaction data below and give exactly 3 short, actionable suggestions.
 
 SUMMARY:
@@ -56,12 +67,26 @@ INSTRUCTIONS:
 - Plain text only
 `.trim();
 
-  try {
+    // 3. API Call
     const result = await model.generateContent(prompt);
-    await incrementAIUsage(); // only count successful calls
-    return result.response.text();
+    
+    // Safely extract text (handles potential empty responses or safety blocks)
+    const responseText = result.response?.text?.();
+    if (!responseText) {
+      return 'Could not generate suggestions. Please try again.';
+    }
+
+    // 4. Track usage only after confirming success
+    await incrementAIUsage(); 
+    return responseText;
+
   } catch (error) {
-    if (error.status === 429) return 'AI quota exceeded. Try again later.';
-    return 'Failed to get suggestions. Check your API key and internet connection.';
+    console.error('AI Suggestion Error:', error); // Good for debugging local builds
+    
+    // Handle specific HTTP status codes if they exist on the error object
+    if (error?.status === 429) {
+      return 'AI quota exceeded. Try again later.';
+    }
+    return 'Failed to get suggestions. Check your internet connection and try again.';
   }
 };

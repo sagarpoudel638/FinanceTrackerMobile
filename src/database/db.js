@@ -29,6 +29,7 @@ export const getDB = async () => {
     try { await db.execAsync(`ALTER TABLE transactions ADD COLUMN date TEXT`); } catch {}
     try { await db.execAsync(`ALTER TABLE transactions ADD COLUMN remarks TEXT DEFAULT ''`); } catch {}
     try { await db.execAsync(`ALTER TABLE transactions ADD COLUMN category TEXT DEFAULT 'other'`); } catch {}
+    try { await db.execAsync(`ALTER TABLE transactions ADD COLUMN receipt_image TEXT DEFAULT NULL`); } catch {}
 
 
     await db.execAsync(`
@@ -45,19 +46,19 @@ export const getAllTransactions = async () => {
   return await db.getAllAsync('SELECT * FROM transactions ORDER BY date DESC, created_at DESC');
 };
 
-export const addTransaction = async (title, income, expenses, date, remarks = '', category = 'other') => {
+export const addTransaction = async (title, income, expenses, date, remarks = '', category = 'other', receiptImage = null) => {
   const db = await getDB();
   return await db.runAsync(
-    'INSERT INTO transactions (title, income, expenses, date, remarks, category) VALUES (?, ?, ?, ?, ?, ?)',
-    [title, parseFloat(income) || 0, parseFloat(expenses) || 0, date, remarks, category]
+    'INSERT INTO transactions (title, income, expenses, date, remarks, category, receipt_image) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [title, parseFloat(income) || 0, parseFloat(expenses) || 0, date, remarks, category, receiptImage]
   );
 };
 
-export const updateTransaction = async (id, title, income, expenses, date, remarks = '', category = 'other') => {
+export const updateTransaction = async (id, title, income, expenses, date, remarks = '', category = 'other', receiptImage = null) => {
   const db = await getDB();
   return await db.runAsync(
-    'UPDATE transactions SET title = ?, income = ?, expenses = ?, date = ?, remarks = ?, category = ? WHERE id = ?',
-    [title, parseFloat(income) || 0, parseFloat(expenses) || 0, date, remarks, category, id]
+    'UPDATE transactions SET title = ?, income = ?, expenses = ?, date = ?, remarks = ?, category = ?, receipt_image = ? WHERE id = ?',
+    [title, parseFloat(income) || 0, parseFloat(expenses) || 0, date, remarks, category, receiptImage, id]
   );
 };
 

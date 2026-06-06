@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   Alert, ScrollView, KeyboardAvoidingView, Platform, StyleSheet,
+  Image, ActionSheetIOS, Modal,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRoute, useNavigation, TabActions } from '@react-navigation/native';
@@ -10,6 +11,11 @@ import { addTransaction, updateTransaction } from '../database/db';
 import { useTheme } from '../context/ThemeContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { CATEGORIES } from '../utils/categories';
+import {
+  pickReceiptFromLibrary,
+  pickReceiptFromCamera,
+  deleteReceiptFile,
+} from '../utils/receiptUtils';
 
 const toDateString = (date) => date.toISOString().substring(0, 10); // 'YYYY-MM-DD'
 const formatDisplay = (str) => {
@@ -34,8 +40,10 @@ export default function AddEditScreen() {
   const [date, setDate]               = useState(toDateString(new Date()));
   const [remarks, setRemarks]         = useState('');
   const [category, setCategory]       = useState('other');
-  const [showPicker, setShowPicker]   = useState(false);
-  const [loading, setLoading]         = useState(false);
+  const [showPicker, setShowPicker]       = useState(false);
+  const [loading, setLoading]             = useState(false);
+  const [receiptImage, setReceiptImage]   = useState(null);
+  const [viewingReceipt, setViewingReceipt] = useState(false);
 
   useEffect(() => {
     if (editing) {
@@ -43,6 +51,7 @@ export default function AddEditScreen() {
       setRemarks(editing.remarks || '');
       setDate(editing.date || toDateString(new Date()));
       setCategory(editing.category || 'other');
+      setReceiptImage(editing.receipt_image || null);
       if ((editing.income || 0) > 0) {
         setType('income');
         setAmount(String(editing.income));
@@ -58,7 +67,43 @@ export default function AddEditScreen() {
   const resetForm = () => {
     setTitle(''); setType(defaultType); setAmount('');
     setDate(toDateString(new Date())); setRemarks(''); setCategory('other');
+    setReceiptImage(null);
     navigation.setParams({ transaction: null });
+  };
+
+  const handlePickReceipt = () => {
+    const options = ['Take Photo', 'Choose from Library', 'Cancel'];
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: 2 },
+        async (idx) => {
+          if (idx === 0) { const p = await pickReceiptFromCamera();  if (p) setReceiptImage(p); }
+          if (idx === 1) { const p = await pickReceiptFromLibrary(); if (p) setReceiptImage(p); }
+        }
+      );
+    } else {
+      Alert.alert('Add Receipt', 'Choose source', [
+        { text: 'Camera',        onPress: async () => { const p = await pickReceiptFromCamera();  if (p) setReceiptImage(p); } },
+        { text: 'Photo Library', onPress: async () => { const p = await pickReceiptFromLibrary(); if (p) setReceiptImage(p); } },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
+  const handleRemoveReceipt = () => {
+    Alert.alert('Remove Receipt', 'Delete the attached receipt image?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive',
+        onPress: () => {
+          // Only delete old file if it's the same as what was saved (not a newly picked one)
+          if (editing?.receipt_image && receiptImage === editing.receipt_image) {
+            deleteReceiptFile(receiptImage);
+          }
+          setReceiptImage(null);
+        },
+      },
+    ]);
   };
 
   const handleSubmit = async () => {
@@ -71,10 +116,14 @@ export default function AddEditScreen() {
     setLoading(true);
     try {
       if (isEditing) {
-        await updateTransaction(editing.id, title.trim(), income, expenses, date, remarks.trim(), category);
+        // If receipt changed, delete the old file
+        if (editing.receipt_image && editing.receipt_image !== receiptImage) {
+          deleteReceiptFile(editing.receipt_image);
+        }
+        await updateTransaction(editing.id, title.trim(), income, expenses, date, remarks.trim(), category, receiptImage);
         Alert.alert('Updated!', 'Transaction has been updated.');
       } else {
-        await addTransaction(title.trim(), income, expenses, date, remarks.trim(), category);
+        await addTransaction(title.trim(), income, expenses, date, remarks.trim(), category, receiptImage);
         Alert.alert('Added!', 'Transaction has been saved.');
       }
       resetForm();
@@ -191,6 +240,46 @@ export default function AddEditScreen() {
         </View>
         <Text style={[s.charCount, { color: theme.muted }]}>{remarks.length}/300</Text>
 
+        {/* Receipt Image */}
+        <Text style={[s.label, { color: theme.subtext }]}>
+          RECEIPT <Text style={s.optional}>(optional)</Text>
+        </Text>
+        {receiptImage ? (
+          <View style={[s.receiptPreviewBox, { borderColor: theme.border }]}>
+            <TouchableOpacity onPress={() => setViewingReceipt(true)} activeOpacity={0.85}>
+              <Image source={{ uri: receiptImage }} style={s.receiptThumb} resizeMode="cover" />
+              <View style={s.receiptOverlay}>
+                <Ionicons name="expand-outline" size={20} color="#fff" />
+                <Text style={s.receiptOverlayText}>Tap to view</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.receiptRemoveBtn} onPress={handleRemoveReceipt} activeOpacity={0.8}>
+              <Ionicons name="trash-outline" size={15} color="#ef5350" />
+              <Text style={s.receiptRemoveText}>Remove</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[s.receiptPickerBtn, { backgroundColor: theme.input, borderColor: theme.border }]}
+            onPress={handlePickReceipt}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="receipt-outline" size={22} color="#6200ee" />
+            <Text style={[s.receiptPickerText, { color: theme.text }]}>Add Receipt Image</Text>
+            <Ionicons name="chevron-forward" size={16} color={theme.muted} />
+          </TouchableOpacity>
+        )}
+
+        {/* Full-screen receipt viewer */}
+        <Modal visible={viewingReceipt} animationType="fade" transparent>
+          <View style={s.receiptViewerOverlay}>
+            <TouchableOpacity style={s.receiptViewerClose} onPress={() => setViewingReceipt(false)}>
+              <Ionicons name="close-circle" size={34} color="#fff" />
+            </TouchableOpacity>
+            <Image source={{ uri: receiptImage }} style={s.receiptViewerImage} resizeMode="contain" />
+          </View>
+        </Modal>
+
         {/* Category — only shown for expenses */}
         {type === 'expenses' && (
           <>
@@ -286,4 +375,38 @@ const s = StyleSheet.create({
     borderWidth: 1.5, borderColor: '#e9d5ff',
   },
   cancelText: { color: '#6200ee', fontWeight: '600', fontSize: 14 },
+
+  // Receipt
+  receiptPickerBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 16, padding: 16, marginBottom: 20,
+    borderWidth: 1.5, borderStyle: 'dashed',
+  },
+  receiptPickerText: { flex: 1, fontSize: 15, fontWeight: '500' },
+
+  receiptPreviewBox: {
+    borderRadius: 16, overflow: 'hidden', marginBottom: 20,
+    borderWidth: 1,
+  },
+  receiptThumb: { width: '100%', height: 180 },
+  receiptOverlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 8,
+  },
+  receiptOverlayText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  receiptRemoveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, padding: 10, backgroundColor: '#fff1f1',
+  },
+  receiptRemoveText: { color: '#ef5350', fontSize: 13, fontWeight: '600' },
+
+  // Full-screen viewer
+  receiptViewerOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  receiptViewerClose: { position: 'absolute', top: 52, right: 20, zIndex: 10 },
+  receiptViewerImage: { width: '100%', height: '80%' },
 });
