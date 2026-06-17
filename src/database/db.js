@@ -23,6 +23,15 @@ export const getDB = async () => {
         date  TEXT PRIMARY KEY,
         count INTEGER DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS reminders (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        title      TEXT NOT NULL,
+        amount     REAL DEFAULT 0,
+        type       TEXT NOT NULL DEFAULT 'payable',
+        due_date   TEXT DEFAULT NULL,
+        notes      TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
     `);
 
 
@@ -115,4 +124,32 @@ export const incrementAIUsage = async () => {
     INSERT INTO ai_usage (date, count) VALUES (?, 1)
     ON CONFLICT(date) DO UPDATE SET count = count + 1
   `, [today()]);
+};
+
+// ─── Reminders ────────────────────────────────────────────────────────────────
+
+export const getAllReminders = async () => {
+  const db = await getDB();
+  return await db.getAllAsync('SELECT * FROM reminders ORDER BY due_date ASC, created_at DESC');
+};
+
+export const addReminder = async (title, amount, type, dueDate = null, notes = '') => {
+  const db = await getDB();
+  return await db.runAsync(
+    'INSERT INTO reminders (title, amount, type, due_date, notes) VALUES (?, ?, ?, ?, ?)',
+    [title, parseFloat(amount) || 0, type, dueDate || null, notes]
+  );
+};
+
+export const updateReminder = async (id, title, amount, type, dueDate = null, notes = '') => {
+  const db = await getDB();
+  return await db.runAsync(
+    'UPDATE reminders SET title = ?, amount = ?, type = ?, due_date = ?, notes = ? WHERE id = ?',
+    [title, parseFloat(amount) || 0, type, dueDate || null, notes, id]
+  );
+};
+
+export const deleteReminder = async (id) => {
+  const db = await getDB();
+  return await db.runAsync('DELETE FROM reminders WHERE id = ?', [id]);
 };

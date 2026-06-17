@@ -13,6 +13,7 @@ import TransactionsScreen from './src/screens/TransactionsScreen';
 import InsightsScreen     from './src/screens/InsightsScreen';
 import SettingsScreen     from './src/screens/SettingsScreen';
 import AddEditScreen      from './src/screens/AddEditScreen';
+import RemindersScreen    from './src/screens/RemindersScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -24,10 +25,11 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ color, size, focused }) => {
           const map = {
-            Dashboard:    focused ? 'grid'         : 'grid-outline',
-            Transactions: focused ? 'list'         : 'list-outline',
-            Insights:     focused ? 'bar-chart'    : 'bar-chart-outline',
-            Settings:     focused ? 'settings'     : 'settings-outline',
+            Dashboard:    focused ? 'grid'             : 'grid-outline',
+            Transactions: focused ? 'list'             : 'list-outline',
+            Insights:     focused ? 'bar-chart'        : 'bar-chart-outline',
+            Reminders:    focused ? 'clipboard'        : 'clipboard-outline',
+            Settings:     focused ? 'settings'         : 'settings-outline',
           };
           return <Ionicons name={map[route.name]} size={size} color={color} />;
         },
@@ -47,6 +49,7 @@ function MainTabs() {
       <Tab.Screen name="Dashboard"    component={DashboardScreen}    options={{ headerTitle: 'Finance Tracker' }} />
       <Tab.Screen name="Transactions" component={TransactionsScreen} />
       <Tab.Screen name="Insights"     component={InsightsScreen} />
+      <Tab.Screen name="Reminders"    component={RemindersScreen} />
       <Tab.Screen name="Settings"     component={SettingsScreen} />
     </Tab.Navigator>
   );
