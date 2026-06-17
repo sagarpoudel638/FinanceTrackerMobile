@@ -7,7 +7,7 @@ const GEMINI_API_KEY = Constants.expoConfig?.extra?.geminiApiKey || '';
 // Fail gracefully early if the key is missing
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 // Use the recommended model for fast, lightweight text tasks
-const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' }) : null;
+const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' }) : null;
 
 export const getRemainingAIRequests = async () => {
   try {
